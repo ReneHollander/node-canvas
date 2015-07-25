@@ -1,43 +1,54 @@
 #include "X11Backend.h"
 
-X11Backend::X11Backend(int width, int height) {
-	this->name = "x11";
+X11Backend::X11Backend(int width, int height)
+	: Backend("x11", width, height)
+{
+	display = XOpenDisplay(NULL);
+	if(!display)
+		throw X11BackendException("Can't open display. Is DISPLAY set?\n");
 
-	this->width = width;
-	this->height = height;
+	this->window = XCreateSimpleWindow(display, RootWindow(display, 0), 0, 0,
+		this->width, this->height, 0, 0, BlackPixel(display, 0));
+
+	XSelectInput(display, this->window, StructureNotifyMask | ExposureMask);
+	XMapWindow(display, this->window);
 }
 
-cairo_surface_t *X11Backend::createSurface() {
-	display = XOpenDisplay(NULL);
-  if (display == NULL) {
-		std::ostringstream o;
-		o << "Can't open display. Is DISPLAY set?\n";
-		throw X11BackendException(o.str());
-  }
+X11Backend::~X11Backend()
+{
+	this->destroySurface();
 
-  this->window = XCreateSimpleWindow(display, RootWindow(display, 0), 0, 0, this->width, this->height, 0, 0, BlackPixel(display, 0));
-  XSelectInput(display, this->window, StructureNotifyMask | ExposureMask);
-  XMapWindow(display, this->window);
+	XCloseDisplay(this->display);
+}
 
-  this->surface = cairo_xlib_surface_create(display, this->window, DefaultVisual(display, 0), this->width, this->height);
+
+cairo_surface_t* X11Backend::createSurface()
+{
+  this->surface = cairo_xlib_surface_create(display, this->window,
+		DefaultVisual(display, 0), this->width, this->height);
 
 	return this->surface;
 }
 
-cairo_surface_t *X11Backend::recreateSurface() {
-	throw BackendOperationNotAvailable(this, "recreateSurface()");
+
+void X11Backend::setWidth(int width)
+{
+	XResizeWindow(this->display, this->window, width, this->height);
+
+	Backend::setWidth(width);
+}
+void X11Backend::setHeight(int height)
+{
+	XResizeWindow(this->display, this->window, this->width, height);
+
+	Backend::setHeight(height);
 }
 
-void X11Backend::destroySurface() {
-	if (this->surface != NULL) {
-		cairo_surface_destroy(this->surface);
-		XCloseDisplay(this->display);
-	}
-}
 
 Persistent<FunctionTemplate> X11Backend::constructor;
 
-void X11Backend::Initialize(Handle<Object> target) {
+void X11Backend::Initialize(Handle<Object> target)
+{
 	NanScope();
 	Local<FunctionTemplate> ctor = NanNew<FunctionTemplate>(X11Backend::New);
 	NanAssignPersistent(X11Backend::constructor, ctor);
@@ -46,13 +57,15 @@ void X11Backend::Initialize(Handle<Object> target) {
 	target->Set(NanNew("X11Backend"), ctor->GetFunction());
 }
 
-NAN_METHOD(X11Backend::New) {
-	int width = 0;
+NAN_METHOD(X11Backend::New)
+{
+	int width  = 0;
 	int height = 0;
-	if (args[0]->IsNumber()) width = args[0]->Uint32Value();
-	if (args[1]->IsNumber()) height = args[1]->Uint32Value();
+	if(args[0]->IsNumber()) width  = args[0]->Uint32Value();
+	if(args[1]->IsNumber()) height = args[1]->Uint32Value();
 
 	X11Backend *backend = new X11Backend(width, height);
+
 	backend->Wrap(args.This());
 	NanReturnValue(args.This());
 }
